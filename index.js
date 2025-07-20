@@ -35,10 +35,7 @@ async function run() {
       res.send(result);
     });
 
-
-
-
-    // ✅ Get a single book by ID
+// ✅ Get a single book by ID
     app.get('/books/:id', async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
@@ -50,7 +47,7 @@ async function run() {
 app.delete('/books/:id', async (req, res) => {
   const id = req.params.id;
   const query = { _id: new ObjectId(id) };
-try {
+  try {
     const result = await booksCollection.deleteOne(query);
     if (result.deletedCount === 1) {
       res.send({ success: true, message: '✅ Book deleted successfully' });
@@ -62,6 +59,7 @@ try {
     res.status(500).send({ success: false, message: '❌ Server error while deleting' });
   }
 });
+
     // ✅ Get books by user email
     app.get('/my-books', async (req, res) => {
       const email = req.query.email;
