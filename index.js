@@ -66,31 +66,7 @@ app.delete('/books/:id', async (req, res) => {
       const result = await booksCollection.find({ user_email: email }).toArray();
       res.send(result);
     });
-
-    // ✅ Insert seed data (only run once or add a condition)
-    const seedData = [
-      {
-        book_title: 'The Alchemist',
-        book_author: 'Paulo Coelho',
-        cover_photo: 'https://example.com/alchemist.jpg',
-        total_page: 208,
-        book_category: 'Fiction',
-        reading_status: 'Not Started',
-        book_overview: 'A journey of a shepherd boy seeking treasure and meaning.'
-      },
-      {
-        book_title: 'Atomic Habits',
-        book_author: 'James Clear',
-        cover_photo: 'https://example.com/atomic.jpg',
-        total_page: 320,
-        book_category: 'Self-Help',
-        reading_status: 'Reading',
-        book_overview: 'An easy & proven way to build good habits and break bad ones.'
-      },
-      // ✅ More books if needed...
-    ];
-
-    // ⚠️ Optional: comment out after first run
+// ⚠️ Optional: comment out after first run
     const existing = await booksCollection.countDocuments();
     if (existing === 0) {
       await booksCollection.insertMany(seedData);
