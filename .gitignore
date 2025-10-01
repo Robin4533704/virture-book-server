@@ -6,4 +6,4 @@ node_modules/
 .vercel
 
 # Firebase secret
-virtual-bookshelf.json
+virtual-bookshelf-admin.json

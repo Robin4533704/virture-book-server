@@ -4,28 +4,29 @@ import dotenv from "dotenv";
 import { MongoClient, ServerApiVersion, ObjectId } from "mongodb";
 import admin from "firebase-admin";
 import fs from "fs";
-
+import multer from "multer";
+import axios from "axios"; // ✅ import axios
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
+const upload = multer();
 
-// Firebase Service Account
-const serviceAccountPath = process.env.SERVICE_ACCOUNT_PATH;
-const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf-8"));
+// Firebase Admin Initialization
+const serviceAccountPath = new URL('./virtual-bookshelf-admin.json', import.meta.url);
+const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf-8'));
 
-// Initialize Firebase
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
-// Middleware
-app.use(cors());
+app.use(cors({
+  origin: "http://localhost:5173",
+  credentials: true,
+}));
 app.use(express.json());
 
-// MongoDB URI
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.dvaruep.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
-
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -34,38 +35,46 @@ const client = new MongoClient(uri, {
   },
 });
 
-// Verify Firebase Token Middleware
+// Firebase Token Middleware
 const verifyFBToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
-
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({ message: "No token provided" });
   }
-
   const token = authHeader.split(" ")[1];
-
   try {
     const decodedToken = await admin.auth().verifyIdToken(token);
-    req.user = decodedToken; // decodedToken.uid, email ইত্যাদি পাওয়া যায়
+    req.user = decodedToken;
     next();
   } catch (err) {
     res.status(401).json({ message: "Invalid or expired token" });
   }
 };
 
-// Main Function
 async function run() {
   try {
     await client.connect();
     const booksCollection = client.db("virtualbook").collection("books");
+    const usersCollection = client.db("virtualbook").collection("user"); // ✅ corrected name
 
-    // Routes
-    app.post("/users", async (req, res) => {
-      const user = req.body;
-      res.status(201).send({ message: "User created", user });
+    // Create User
+    app.post("/user", async (req, res) => {
+      try {
+        const user = req.body;
+        const result = await usersCollection.insertOne(user);
+        res.status(201).send({
+          message: "User created",
+          user: { _id: result.insertedId, ...user },
+        });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Failed to create user" });
+      }
     });
 
-    app.get("/books", async (req, res) => {
+  
+
+app.get("/books", async (req, res) => {
       const result = await booksCollection.find().toArray();
       res.send(result);
     });
@@ -100,6 +109,31 @@ async function run() {
       }
     });
 
+    // PATCH /books/:bookId
+app.patch("/books/:bookId", async (req, res) => {
+  const { bookId } = req.params;
+  const { reading_status } = req.body;
+
+  try {
+    // MongoDB collection থেকে খুঁজে update করা
+    const book = await booksCollection.findOne({ _id: new ObjectId(bookId) });
+    if (!book) return res.status(404).json({ message: "Book not found in DB" });
+
+    const updatedBook = await booksCollection.findOneAndUpdate(
+      { _id: new ObjectId(bookId) },
+      { $set: { reading_status } },
+      { returnDocument: "after" } // update হওয়া document ফেরত দিবে
+    );
+
+    res.json(updatedBook.value);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+
     app.put("/books/:id", async (req, res) => {
       const id = req.params.id;
       const { _id, ...updateData } = req.body;
@@ -117,28 +151,35 @@ async function run() {
       }
     });
 
-    // Upvote
-    app.post("/books/:id/upvote", async (req, res) => {
-      const id = req.params.id;
-      const { user_email } = req.body;
+app.post("/books/:id/upvote", async (req, res) => {
+  const { id } = req.params;
+  const { user_email } = req.body;
 
-      try {
-        const book = await booksCollection.findOne({ _id: new ObjectId(id) });
-        if (!book) return res.status(404).send({ message: "Book not found" });
+  try {
+    const book = await booksCollection.findOne({ _id: new ObjectId(id) });
 
-        if (book.user_email === user_email)
-          return res.status(400).send({ message: "You cannot upvote your own book" });
+    if (!book) return res.status(404).send({ message: "Book not found" });
 
-        await booksCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $inc: { upvote: 1 } }
-        );
+    const bookOwnerEmail = book.user_email || book.user?.email; // safety
+    if (!bookOwnerEmail)
+      return res.status(400).send({ message: "Book owner info missing" });
 
-        res.send({ success: true, upvote: (book.upvote || 0) + 1 });
-      } catch (err) {
-        res.status(500).send({ success: false, message: "Server error" });
-      }
-    });
+    if (bookOwnerEmail === user_email)
+      return res.status(400).send({ message: "You cannot upvote your own book" });
+
+    const result = await booksCollection.findOneAndUpdate(
+      { _id: new ObjectId(id) },
+      { $inc: { upvote: 1 } },
+      { returnDocument: "after" }
+    );
+
+    res.send({ success: true, upvote: result.value.upvote });
+  } catch (err) {
+    console.error("Upvote error:", err);
+    res.status(500).send({ success: false, message: "Server error" });
+  }
+});
+
 
     // Reviews
     app.get("/books/:id/reviews", async (req, res) => {
