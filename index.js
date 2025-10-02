@@ -5,7 +5,7 @@ import { MongoClient, ServerApiVersion, ObjectId } from "mongodb";
 import admin from "firebase-admin";
 import fs from "fs";
 import multer from "multer";
-import axios from "axios"; // ✅ import axios
+
 dotenv.config();
 
 const app = express();
@@ -21,9 +21,13 @@ admin.initializeApp({
 });
 
 app.use(cors({
-  origin: "http://localhost:5173",
+  origin: [
+    "http://localhost:5173",      
+    "https://virtual-bookshop-server-assainment1.vercel.app"    
+  ],
   credentials: true,
 }));
+
 app.use(express.json());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.dvaruep.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -35,7 +39,17 @@ const client = new MongoClient(uri, {
   },
 });
 
-// Firebase Token Middleware
+
+
+async function run() {
+  try {
+    await client.connect();
+    const booksCollection = client.db("virtualbook").collection("books");
+    const usersCollection = client.db("virtualbook").collection("user"); // ✅ corrected name
+   const categoriesCollection = client.db("virtualbook").collection("categories");
+
+
+   // Firebase Token Middleware
 const verifyFBToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -51,43 +65,92 @@ const verifyFBToken = async (req, res, next) => {
   }
 };
 
-async function run() {
-  try {
-    await client.connect();
-    const booksCollection = client.db("virtualbook").collection("books");
-    const usersCollection = client.db("virtualbook").collection("user"); // ✅ corrected name
 
-    // Create User
-    app.post("/user", async (req, res) => {
-      try {
-        const user = req.body;
-        const result = await usersCollection.insertOne(user);
-        res.status(201).send({
-          message: "User created",
-          user: { _id: result.insertedId, ...user },
-        });
-      } catch (err) {
-        console.error(err);
-        res.status(500).send({ message: "Failed to create user" });
-      }
+app.post("/user", async (req, res) => {
+  try {
+    const { email, displayName, role } = req.body;
+
+    if (!email || !displayName) {
+      return res.status(400).send({ message: "Email and name are required" });
+    }
+
+    // Check duplicate
+    const existing = await usersCollection.findOne({ email });
+    if (existing) {
+      return res.status(409).send({ message: "User already exists" });
+    }
+
+    const user = {
+      email,
+      displayName,
+      role: role || "user",
+      photoURL: "",
+      created_at: new Date(),
+      last_log_in: new Date(),
+    };
+
+    const result = await usersCollection.insertOne(user);
+    res.status(201).send({
+      message: "User created",
+      user: { _id: result.insertedId, ...user },
     });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ message: "Failed to create user" });
+  }
+});
 
   
-
+// GET /books?category=Fiction
 app.get("/books", async (req, res) => {
-      const result = await booksCollection.find().toArray();
-      res.send(result);
-    });
+  try {
+    const { category } = req.query; // query থেকে category নেয়া
+    let filter = {};
 
-    app.post("/books", verifyFBToken, async (req, res) => {
-      const bookData = req.body;
-      try {
-        const result = await booksCollection.insertOne(bookData);
-        res.status(201).send(result);
-      } catch (err) {
-        res.status(500).send({ error: err.message });
-      }
-    });
+    if (category) {
+      filter.book_category = category; // যদি category থাকে, ফিল্টার করে দাও
+    }
+
+    const result = await booksCollection.find(filter).toArray();
+    res.send(result);
+  } catch (err) {
+    console.error("Error fetching books:", err);
+    res.status(500).send({ error: "Internal Server Error" });
+  }
+});
+
+app.put("/books/:id", async (req, res) => {
+  const { id } = req.params;
+  const updatedBook = { ...req.body };
+  delete updatedBook._id; // ⚡️ _id বাদ দিলাম
+
+  try {
+    const result = await booksCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updatedBook }
+    );
+
+    res.send({ success: true, message: "Book updated successfully" });
+  } catch (err) {
+    console.error("Update error:", err);
+    res.status(500).send({ success: false, message: "Failed to update book" });
+  }
+});
+
+
+
+
+app.post("/books", verifyFBToken, async (req, res) => {
+  const bookData = req.body;
+  bookData.user_email = req.user.email; // 🔑 এই লাইনটি অবশ্যই থাকতে হবে
+  bookData.upvote = 0;
+  bookData.createdAt = new Date();
+
+  const result = await booksCollection.insertOne(bookData);
+  res.status(201).send({ message: "Book created", book: { _id: result.insertedId, ...bookData } });
+});
+
+
 
     app.get("/books/:id", async (req, res) => {
       const id = req.params.id;
@@ -151,38 +214,10 @@ app.patch("/books/:bookId", async (req, res) => {
       }
     });
 
-app.post("/books/:id/upvote", async (req, res) => {
-  const { id } = req.params;
-  const { user_email } = req.body;
 
-  try {
-    const book = await booksCollection.findOne({ _id: new ObjectId(id) });
-
-    if (!book) return res.status(404).send({ message: "Book not found" });
-
-    const bookOwnerEmail = book.user_email || book.user?.email; // safety
-    if (!bookOwnerEmail)
-      return res.status(400).send({ message: "Book owner info missing" });
-
-    if (bookOwnerEmail === user_email)
-      return res.status(400).send({ message: "You cannot upvote your own book" });
-
-    const result = await booksCollection.findOneAndUpdate(
-      { _id: new ObjectId(id) },
-      { $inc: { upvote: 1 } },
-      { returnDocument: "after" }
-    );
-
-    res.send({ success: true, upvote: result.value.upvote });
-  } catch (err) {
-    console.error("Upvote error:", err);
-    res.status(500).send({ success: false, message: "Server error" });
-  }
-});
-
-
-    // Reviews
-    app.get("/books/:id/reviews", async (req, res) => {
+ // Reviews
+  
+ app.get("/books/:id/reviews", async (req, res) => {
       const id = req.params.id;
       const book = await booksCollection.findOne({ _id: new ObjectId(id) });
       if (!book) return res.status(404).send({ message: "Book not found" });
@@ -216,6 +251,46 @@ app.post("/books/:id/upvote", async (req, res) => {
       await booksCollection.updateOne({ _id: new ObjectId(bookId) }, { $set: { reviews } });
       res.send(reviews);
     });
+
+app.post("/profile", verifyFBToken, async (req, res) => {
+  try {
+    const userData = req.body; // client থেকে আসবে
+    // MongoDB collection এ insertOne/updateOne
+    const result = await usersCollection.updateOne(
+      { email: userData.email },
+      { $set: userData },
+      { upsert: true }
+    );
+
+    res.json({ success: true, message: "Profile saved", result });
+  } catch (err) {
+    console.error("Profile Save Error:", err);
+    res.status(500).json({ success: false, error: "Database error" });
+  }
+});
+
+    // GET /categories
+app.get("/categories", async (req, res) => {
+  try {
+    const categories = await categoriesCollection.find({}).toArray();
+    res.send(categories);
+  } catch (err) {
+    console.error("Error fetching categories:", err);
+    res.status(500).send({ error: "Internal Server Error" });
+  }
+});
+
+// POST /categories - নতুন category add করার জন্য
+app.post("/categories", verifyFBToken, async (req, res) => {
+  try {
+    const categoryData = req.body; // { name: "Fiction" }
+    const result = await categoriesCollection.insertOne(categoryData);
+    res.status(201).send({ success: true, category: { _id: result.insertedId, ...categoryData } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ error: "Failed to create category" });
+  }
+});
 
     console.log("MongoDB connected successfully ✅");
   } catch (err) {
