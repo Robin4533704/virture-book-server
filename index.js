@@ -66,6 +66,11 @@ const verifyFBToken = async (req, res, next) => {
 };
 
 
+app.get('/user', async (req, res) =>{
+  const user = await usersCollection.find().toArray();
+  res.json(user)
+})
+
 app.post("/user", async (req, res) => {
   try {
     const { email, displayName, role } = req.body;
