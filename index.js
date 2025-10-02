@@ -3,34 +3,34 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { MongoClient, ServerApiVersion, ObjectId } from "mongodb";
 import admin from "firebase-admin";
-import fs from "fs";
-import multer from "multer";
+
 
 dotenv.config();
-
 const app = express();
 const port = process.env.PORT || 3000;
-const upload = multer();
 
-// Firebase Admin Initialization
-const serviceAccountPath = new URL('./virtual-bookshelf-admin.json', import.meta.url);
-const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf-8'));
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
 
-app.use(cors({
-  origin: [
-    "http://localhost:5173",      
-    "https://virtual-bookshop-server-assainment1.vercel.app"    
-  ],
+const config = {
+  origin: ["http://localhost:5173", "https://virtual-bookshop-server-assainment1.vercel.app"],
   credentials: true,
-}));
+  methods: ["GET", "PUT", "POST", "DELETE"],
+};
 
+app.use(cors(config));
 app.use(express.json());
 
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.dvaruep.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+
+
+// const serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_KEY);
+// admin.initializeApp({
+//   credential: admin.credential.cert(serviceAccount),
+// });
+
+
+
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.dvaruep.mongodb.net/virtualbook_Addmin?retryWrites=true&w=majority&appName=Cluster0`;
+
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -40,13 +40,20 @@ const client = new MongoClient(uri, {
 });
 
 
+let booksCollection, usersCollection, categoriesCollection;
 
 async function run() {
   try {
     await client.connect();
-    const booksCollection = client.db("virtualbook").collection("books");
-    const usersCollection = client.db("virtualbook").collection("user"); // ✅ corrected name
-   const categoriesCollection = client.db("virtualbook").collection("categories");
+    const db = client.db("virtualbook");
+    booksCollection = db.collection("books");
+    usersCollection = db.collection("user");
+    categoriesCollection = db.collection("categories");
+    console.log("MongoDB connected successfully ✅");
+  } catch (err) {
+    console.error("MongoDB connection error ❌", err);
+  }
+}
 
 
    // Firebase Token Middleware
@@ -298,16 +305,13 @@ app.post("/categories", verifyFBToken, async (req, res) => {
 });
 
     console.log("MongoDB connected successfully ✅");
-  } catch (err) {
-    console.error("MongoDB connection error ❌", err);
-  }
-}
+
 
 run().catch(console.dir);
 
 // Root route
 app.get("/", (req, res) => {
-  res.send("Virtual Bookshop API is running 📚");
+  res.send("ping your Virtual Bookshop API is running 📚");
 });
 
 // Start server
