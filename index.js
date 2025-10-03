@@ -123,49 +123,47 @@ app.get("/books", async (req, res) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
-
-app.put("/books/:id", async (req, res) => {
-  const { id } = req.params;
-  const updatedBook = { ...req.body };
-  delete updatedBook._id; // ⚡️ _id বাদ দিলাম
-
-  try {
-    const result = await booksCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: updatedBook }
-    );
-
-    res.send({ success: true, message: "Book updated successfully" });
-  } catch (err) {
-    console.error("Update error:", err);
-    res.status(500).send({ success: false, message: "Failed to update book" });
-  }
-});
-
-
-
-
 app.post("/books", verifyFBToken, async (req, res) => {
+  console.log("Decoded user:", req.user); // ✅ user check
   const bookData = req.body;
-  bookData.user_email = req.user.email; // 🔑 এই লাইনটি অবশ্যই থাকতে হবে
+  bookData.user_email = req.user.email;
   bookData.upvote = 0;
   bookData.createdAt = new Date();
-
+  const { booksCollection } = await getCollections();
   const result = await booksCollection.insertOne(bookData);
-  res.status(201).send({ message: "Book created", book: { _id: result.insertedId, ...bookData } });
+  res.status(201).send({
+    message: "Book created",
+    book: { _id: result.insertedId, ...bookData },
+  });
 });
 
+   app.get("/books/:id", async (req, res) => {
+  const { id } = req.params;
 
+  try {
+    // ID valid কিনা চেক করো
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ error: "Invalid book ID" });
+    }
 
-    app.get("/books/:id", async (req, res) => {
-      const id = req.params.id;
-      const result = await booksCollection.findOne({ _id: new ObjectId(id) });
-      res.send(result);
-    });
+    const { booksCollection } = await getCollections();
+    const book = await booksCollection.findOne({ _id: new ObjectId(id) });
+
+    if (!book) {
+      return res.status(404).json({ error: "Book not found" });
+    }
+
+    res.json(book);
+  } catch (err) {
+    console.error("Error fetching book:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
 
     app.delete("/books/:id", async (req, res) => {
       const id = req.params.id;
       try {
+        const { booksCollection } = await getCollections();
         const result = await booksCollection.deleteOne({ _id: new ObjectId(id) });
         if (result.deletedCount === 1) {
           res.send({ success: true, message: "Book deleted successfully" });
@@ -183,7 +181,8 @@ app.patch("/books/:bookId", async (req, res) => {
   const { reading_status } = req.body;
 
   try {
-    // MongoDB collection থেকে খুঁজে update করা
+    
+    const { booksCollection } = await getCollections();
     const book = await booksCollection.findOne({ _id: new ObjectId(bookId) });
     if (!book) return res.status(404).json({ message: "Book not found in DB" });
 
@@ -206,6 +205,7 @@ app.patch("/books/:bookId", async (req, res) => {
       const id = req.params.id;
       const { _id, ...updateData } = req.body;
       try {
+        const { booksCollection } = await getCollections();
         const result = await booksCollection.updateOne(
           { _id: new ObjectId(id) },
           { $set: updateData }
@@ -224,6 +224,7 @@ app.patch("/books/:bookId", async (req, res) => {
   
  app.get("/books/:id/reviews", async (req, res) => {
       const id = req.params.id;
+      const { booksCollection } = await getCollections();
       const book = await booksCollection.findOne({ _id: new ObjectId(id) });
       if (!book) return res.status(404).send({ message: "Book not found" });
       res.send(book.reviews || []);
@@ -232,9 +233,10 @@ app.patch("/books/:bookId", async (req, res) => {
     app.post("/books/:id/reviews", async (req, res) => {
       const id = req.params.id;
       const { user_name, user_email, review } = req.body;
+
+       const { booksCollection } = await getCollections();
       const book = await booksCollection.findOne({ _id: new ObjectId(id) });
       if (!book) return res.status(404).send({ message: "Book not found" });
-
       const reviews = book.reviews || [];
       const existingIndex = reviews.findIndex((r) => r.user_email === user_email);
       if (existingIndex > -1) {
@@ -249,6 +251,8 @@ app.patch("/books/:bookId", async (req, res) => {
 
     app.delete("/books/:bookId/reviews/:reviewId", async (req, res) => {
       const { bookId, reviewId } = req.params;
+
+      const { booksCollection } = await getCollections();
       const book = await booksCollection.findOne({ _id: new ObjectId(bookId) });
       if (!book) return res.status(404).send({ message: "Book not found" });
 
@@ -259,8 +263,8 @@ app.patch("/books/:bookId", async (req, res) => {
 
 app.post("/profile", verifyFBToken, async (req, res) => {
   try {
-    const userData = req.body; // client থেকে আসবে
-    // MongoDB collection এ insertOne/updateOne
+    const userData = req.body; 
+    const { usersCollection } = await getCollections();
     const result = await usersCollection.updateOne(
       { email: userData.email },
       { $set: userData },
@@ -290,6 +294,7 @@ app.get("/categories", async (req, res) => {
 app.post("/categories", verifyFBToken, async (req, res) => {
   try {
     const categoryData = req.body; // { name: "Fiction" }
+     const { categoriesCollection } = await getCollections();
     const result = await categoriesCollection.insertOne(categoryData);
     res.status(201).send({ success: true, category: { _id: result.insertedId, ...categoryData } });
   } catch (err) {
