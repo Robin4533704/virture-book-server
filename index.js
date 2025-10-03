@@ -8,16 +8,20 @@ import admin from "firebase-admin";
 dotenv.config();
 const app = express();
 const port = process.env.PORT || 3000;
-app.use(cors());
+
+
+const corsOptions = {
+  origin: [
+    "http://localhost:5173",
+    "https://magnificent-salamander-950893.netlify.app", 
+    "https://virtual-bookshop-server-assainment1.vercel.app"
+  ],
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
-
-
-// const config = {
-//   origin: ["http://localhost:5173", "https://virtual-bookshop-server-assainment1.vercel.app"],
-//   credentials: true,
-//   methods: ["GET", "PUT", "POST", "DELETE"],
-// };
-
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.dvaruep.mongodb.net/virtualbook_Addmin?retryWrites=true&w=majority&appName=Cluster0`;
 
 const client = new MongoClient(uri, {
