@@ -8,26 +8,15 @@ import admin from "firebase-admin";
 dotenv.config();
 const app = express();
 const port = process.env.PORT || 3000;
-
-
-
-const config = {
-  origin: ["http://localhost:5173", "https://virtual-bookshop-server-assainment1.vercel.app"],
-  credentials: true,
-  methods: ["GET", "PUT", "POST", "DELETE"],
-};
-
-app.use(cors(config));
+app.use(cors());
 app.use(express.json());
 
 
-
-// const serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_KEY);
-// admin.initializeApp({
-//   credential: admin.credential.cert(serviceAccount),
-// });
-
-
+// const config = {
+//   origin: ["http://localhost:5173", "https://virtual-bookshop-server-assainment1.vercel.app"],
+//   credentials: true,
+//   methods: ["GET", "PUT", "POST", "DELETE"],
+// };
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.dvaruep.mongodb.net/virtualbook_Addmin?retryWrites=true&w=majority&appName=Cluster0`;
 
@@ -40,19 +29,19 @@ const client = new MongoClient(uri, {
 });
 
 
-let booksCollection, usersCollection, categoriesCollection;
 
-async function run() {
-  try {
+// ✅ Helper: Always get collections safely
+async function getCollections() {
+  if (!client.topology?.isConnected()) {
     await client.connect();
-    const db = client.db("virtualbook");
-    booksCollection = db.collection("books");
-    usersCollection = db.collection("user");
-    categoriesCollection = db.collection("categories");
-    console.log("MongoDB connected successfully ✅");
-  } catch (err) {
-    console.error("MongoDB connection error ❌", err);
+    console.log("MongoDB connected ✅");
   }
+  const db = client.db(process.env.DB_NAME || "virtualbook");
+  return {
+    booksCollection: db.collection("books"),
+    usersCollection: db.collection("user"),
+    categoriesCollection: db.collection("categories"),
+  };
 }
 
 
@@ -74,8 +63,14 @@ const verifyFBToken = async (req, res, next) => {
 
 
 app.get('/user', async (req, res) =>{
+ try{
+   const { usersCollection } = await getCollections();
   const user = await usersCollection.find().toArray();
   res.json(user)
+ }catch (err) {
+    console.error("Error fetching books:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 })
 
 app.post("/user", async (req, res) => {
@@ -110,24 +105,18 @@ app.post("/user", async (req, res) => {
     console.error(err);
     res.status(500).send({ message: "Failed to create user" });
   }
-});
+} );
 
   
-// GET /books?category=Fiction
+// ✅ PUBLIC route - no auth
 app.get("/books", async (req, res) => {
   try {
-    const { category } = req.query; // query থেকে category নেয়া
-    let filter = {};
-
-    if (category) {
-      filter.book_category = category; // যদি category থাকে, ফিল্টার করে দাও
-    }
-
-    const result = await booksCollection.find(filter).toArray();
-    res.send(result);
+    const { booksCollection } = await getCollections();
+    const books = await booksCollection.find().toArray();
+    res.json(books);
   } catch (err) {
     console.error("Error fetching books:", err);
-    res.status(500).send({ error: "Internal Server Error" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
@@ -284,6 +273,7 @@ app.post("/profile", verifyFBToken, async (req, res) => {
     // GET /categories
 app.get("/categories", async (req, res) => {
   try {
+    const { categoriesCollection } = await getCollections();
     const categories = await categoriesCollection.find({}).toArray();
     res.send(categories);
   } catch (err) {
@@ -307,7 +297,7 @@ app.post("/categories", verifyFBToken, async (req, res) => {
     console.log("MongoDB connected successfully ✅");
 
 
-run().catch(console.dir);
+
 
 // Root route
 app.get("/", (req, res) => {
