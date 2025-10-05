@@ -3,6 +3,11 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { MongoClient, ServerApiVersion, ObjectId } from "mongodb";
 import admin from "firebase-admin";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+
 
 
 dotenv.config();
@@ -10,17 +15,32 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 
-const corsOptions = {
-  origin: [
-    "http://localhost:5173",
-    "https://magnificent-salamander-950893.netlify.app", 
-    "https://virtual-bookshop-server-assainment1.vercel.app"
-  ],
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-};
+// Path fix for ES module
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-app.use(cors(corsOptions));
+const serviceAccount = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "virtual-bookshelf-admin.json"), "utf-8")
+);
+// Firebase init
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  storageBucket: "virtual-bookshelf-9cce9.appspot.com"
+});
+
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "https://virtual-bookshop-server-assainment11.vercel.app", // ঠিক করা হয়েছে
+      "https://guileless-klepon-50bfea.netlify.app"
+    ],
+    credentials: true,
+  })
+);
+
+const bucket = admin.storage().bucket(); 
+
 app.use(express.json());
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.dvaruep.mongodb.net/virtualbook_Addmin?retryWrites=true&w=majority&appName=Cluster0`;
 
@@ -86,6 +106,7 @@ app.post("/user", async (req, res) => {
     }
 
     // Check duplicate
+      const { usersCollection } = await getCollections();
     const existing = await usersCollection.findOne({ email });
     if (existing) {
       return res.status(409).send({ message: "User already exists" });
@@ -261,24 +282,21 @@ app.patch("/books/:bookId", async (req, res) => {
       res.send(reviews);
     });
 
-app.post("/profile", verifyFBToken, async (req, res) => {
-  try {
-    const userData = req.body; 
-    const { usersCollection } = await getCollections();
-    const result = await usersCollection.updateOne(
-      { email: userData.email },
-      { $set: userData },
-      { upsert: true }
-    );
 
-    res.json({ success: true, message: "Profile saved", result });
+app.post("/profile", verifyFBToken, async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) return res.status(401).send("Unauthorized");
+
+  const token = authHeader.split(" ")[1];
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(token);
+ 
   } catch (err) {
-    console.error("Profile Save Error:", err);
-    res.status(500).json({ success: false, error: "Database error" });
+    return res.status(401).send("Unauthorized");
   }
 });
 
-    // GET /categories
+// GET /categories
 app.get("/categories", async (req, res) => {
   try {
     const { categoriesCollection } = await getCollections();

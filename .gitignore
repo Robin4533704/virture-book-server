@@ -1,9 +1,28 @@
 # Node modules
 node_modules/
 
+# Build outputs
+dist/
+build/
+
+# Logs
+*.log
+
 # Environment variables
 .env
 .vercel
 
-# Firebase secret
+# Git files
+.git/
+.gitignore
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Firebase secret or any secret keys
 virtual-bookshelf-admin.json
+
+# Optional: temporary files or caches
+*.tmp
+*.swp
