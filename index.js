@@ -32,7 +32,7 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173",
-      "https://virtual-bookshop-server-assainment11.vercel.app", // ঠিক করা হয়েছে
+      "https://virtual-bookshop-server-assainment1.vercel.app",
       "https://guileless-klepon-50bfea.netlify.app"
     ],
     credentials: true,
