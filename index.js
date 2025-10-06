@@ -137,11 +137,18 @@ app.post("/user", async (req, res) => {
 app.get("/books", async (req, res) => {
   try {
     const { booksCollection } = await getCollections();
-    const books = await booksCollection.find().toArray();
-    res.json(books);
+    const { category } = req.query;
+
+    let query = {};
+    if (category) {
+      query.book_category = category;
+    }
+
+    const books = await booksCollection.find(query).toArray();
+    res.send(books);
   } catch (err) {
     console.error("Error fetching books:", err);
-    res.status(500).json({ error: "Internal Server Error" });
+    res.status(500).send({ error: "Internal Server Error" });
   }
 });
 app.post("/books", verifyFBToken, async (req, res) => {
@@ -220,6 +227,20 @@ app.patch("/books/:bookId", async (req, res) => {
   }
 });
 
+// Top Popular Books (by upvote)
+app.get("/books/popular", async (req, res) => {
+  const { booksCollection } = await getCollections();
+
+  // সর্বোচ্চ upvote এর বইগুলো আনবে
+  const popularBooks = await booksCollection
+    .find()
+    .sort({ upvotes: -1 }) // upvotes descending order
+    .limit(9) // 6-9 টা বই নিতে পারবেন
+    .toArray();
+
+  res.send(popularBooks);
+});
+
 
 
     app.put("/books/:id", async (req, res) => {
@@ -250,25 +271,39 @@ app.patch("/books/:bookId", async (req, res) => {
       if (!book) return res.status(404).send({ message: "Book not found" });
       res.send(book.reviews || []);
     });
+app.post("/books/:id/reviews", async (req, res) => {
+  const id = req.params.id;
+  const { user_name, user_email, review } = req.body;
 
-    app.post("/books/:id/reviews", async (req, res) => {
-      const id = req.params.id;
-      const { user_name, user_email, review } = req.body;
+  const { booksCollection } = await getCollections();
+  const book = await booksCollection.findOne({ _id: new ObjectId(id) });
+  if (!book) return res.status(404).send({ message: "Book not found" });
 
-       const { booksCollection } = await getCollections();
-      const book = await booksCollection.findOne({ _id: new ObjectId(id) });
-      if (!book) return res.status(404).send({ message: "Book not found" });
-      const reviews = book.reviews || [];
-      const existingIndex = reviews.findIndex((r) => r.user_email === user_email);
-      if (existingIndex > -1) {
-        reviews[existingIndex].review = review;
-      } else {
-        reviews.push({ user_name, user_email, review, _id: new ObjectId() });
-      }
+  let reviews = book.reviews || [];
 
-      await booksCollection.updateOne({ _id: new ObjectId(id) }, { $set: { reviews } });
-      res.send(reviews);
+  // পুরোনো reviews-এ যদি createdAt না থাকে, add করা
+  reviews = reviews.map(r => ({
+    ...r,
+    createdAt: r.createdAt ? r.createdAt : new Date()
+  }));
+
+  const existingIndex = reviews.findIndex((r) => r.user_email === user_email);
+  if (existingIndex > -1) {
+    reviews[existingIndex].review = review;
+    reviews[existingIndex].createdAt = new Date(); // আপডেট হলে নতুন date
+  } else {
+    reviews.push({ 
+      _id: new ObjectId(),
+      user_name, 
+      user_email, 
+      review, 
+      createdAt: new Date() 
     });
+  }
+
+  await booksCollection.updateOne({ _id: new ObjectId(id) }, { $set: { reviews } });
+  res.send(reviews);
+});
 
     app.delete("/books/:bookId/reviews/:reviewId", async (req, res) => {
       const { bookId, reviewId } = req.params;
@@ -296,7 +331,7 @@ app.post("/profile", verifyFBToken, async (req, res) => {
   }
 });
 
-// GET /categories
+// GET /categories - সব ক্যাটাগরি
 app.get("/categories", async (req, res) => {
   try {
     const { categoriesCollection } = await getCollections();
@@ -308,24 +343,21 @@ app.get("/categories", async (req, res) => {
   }
 });
 
-// POST /categories - নতুন category add করার জন্য
+// POST /categories - নতুন category add
 app.post("/categories", verifyFBToken, async (req, res) => {
   try {
     const categoryData = req.body; // { name: "Fiction" }
-     const { categoriesCollection } = await getCollections();
+    const { categoriesCollection } = await getCollections();
     const result = await categoriesCollection.insertOne(categoryData);
-    res.status(201).send({ success: true, category: { _id: result.insertedId, ...categoryData } });
+    res.status(201).send({
+      success: true,
+      category: { _id: result.insertedId, ...categoryData },
+    });
   } catch (err) {
     console.error(err);
     res.status(500).send({ error: "Failed to create category" });
   }
 });
-
-    console.log("MongoDB connected successfully ✅");
-
-
-
-
 // Root route
 app.get("/", (req, res) => {
   res.send("ping your Virtual Bookshop API is running 📚");
