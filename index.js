@@ -33,7 +33,7 @@ app.use(
     origin: [
       "http://localhost:5173",
       "https://virtual-bookshop-server-assainment1.vercel.app",
-      "https://guileless-klepon-50bfea.netlify.app"
+      "https://bucolic-kulfi-fbeaec.netlify.app"
     ],
     credentials: true,
   })
@@ -58,7 +58,7 @@ const client = new MongoClient(uri, {
 async function getCollections() {
   if (!client.topology?.isConnected()) {
     await client.connect();
-    console.log("MongoDB connected ✅");
+    console.log("ping MongoDB connected ✅");
   }
   const db = client.db(process.env.DB_NAME || "virtualbook");
   return {
